@@ -21,7 +21,7 @@ THREADS = int(os.environ['THREADS'])
 temp_name = f'{time.time_ns()}'
 
 
-def text_to_speech_one(audio_bytes):
+def text_to_speech_one_real(audio_bytes):
     one_temp_name = f'{temp_name}_{id(multiprocessing.current_process())}.wav'
     audio_bytes.export(one_temp_name, format = 'wav')
     with open(one_temp_name, 'rb') as f:
@@ -33,6 +33,12 @@ def text_to_speech_one(audio_bytes):
         'Content-Type': 'audio/wav'
     }
     response = requests.post(get_text_url, data=audio_bytes, headers=headers)
+    if response.status_code == 429:
+        # too many requests, sleep 15s and try again
+        sleep_time = 15
+        print(f'Got HTTP 429! sleep {sleep_time}s')
+        time.sleep(sleep_time)
+        return text_to_speech_one(audio_bytes)
     if response.status_code != 200:
         raise ValueError(response.status_code, response.text)
     res = response.json()
@@ -42,6 +48,15 @@ def text_to_speech_one(audio_bytes):
         raise ValueError(f"response status {res['RecognitionStatus']}")
     return res['DisplayText']
 
+def text_to_speech_one(audio_bytes, retry_times = 3, retry_delay = 15):
+    ex = None
+    for _ in range(retry_times):
+        try:
+            return text_to_speech_one_real(audio_bytes)
+        except Exception as e:
+            ex = e
+            time.sleep(retry_delay)
+    raise ex
 
 def text_to_speech(audio_bytes: AS, one_length = 25000, repeat_end = 500, 
                    threads = 1):
